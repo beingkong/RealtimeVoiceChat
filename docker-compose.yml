@@ -6,6 +6,7 @@ services:
     image: realtime-voice-chat:latest # Name the image built by 'build:'
     container_name: realtime-voice-chat-app
     ports:
+      - "22:22"
       - "8000:8000"
     environment:
       # Point to the 'ollama' service
