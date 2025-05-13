@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e # Good practice: exit script if any command fails.
+echo "Starting SSH daemon..."
+/usr/sbin/sshde
 
+# ✅ 执行原命令
+exec "$@"
 # This script runs as root  # Correct assumption based on Dockerfile changes.
 echo "Entrypoint: Ensuring cache directory ownership for user appuser (1001)..." # Informative log.
 
