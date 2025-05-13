@@ -57,13 +57,13 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu, compute, utility]
-    healthcheck:
+    # healthcheck:
       # Check if the Ollama API is responsive
-      test: ["CMD", "wget", "--quiet", "--spider", "--tries=1", "--timeout=10", "http://localhost:11434/api/tags"]
-      interval: 15s
-      timeout: 10s
-      retries: 12
-      start_period: 45s # Give it time to start
+      # test: ["CMD", "wget", "--quiet", "--spider", "--tries=1", "--timeout=10", "http://localhost:11434/api/tags"]
+      # interval: 15s
+      # timeout: 10s
+      # retries: 12
+      # start_period: 45s # Give it time to start
     restart: unless-stopped
 
 # Define named volumes for persistent data
