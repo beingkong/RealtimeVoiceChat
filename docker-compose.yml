@@ -35,7 +35,7 @@ services:
               capabilities: [gpu, compute, utility]
     restart: unless-stopped
 
-  Ollama Server Service (Using Official Image)
+  # Ollama Server Service (Using Official Image)
   ollama:
     # --- Use the official Ollama image ---
     image: ollama/ollama:latest
@@ -58,7 +58,7 @@ services:
               count: all
               capabilities: [gpu, compute, utility]
     healthcheck:
-      Check if the Ollama API is responsive
+      # Check if the Ollama API is responsive
       test: ["CMD", "wget", "--quiet", "--spider", "--tries=1", "--timeout=10", "http://localhost:11434/api/tags"]
       interval: 15s
       timeout: 10s
