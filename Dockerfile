@@ -4,6 +4,18 @@ FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04 AS builder
 # Avoid prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
+# ✅ 安装 SSH 服务 + 设置 root 密码
+RUN apt-get update && apt-get install -y openssh-server && \
+    mkdir /var/run/sshd && \
+    echo "root:dockerpass" | chpasswd && \
+    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
+    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
+    sed -i 's/UsePAM yes/UsePAM no/' /etc/ssh/sshd_config
+
+# ✅ 暴露 SSH 端口
+EXPOSE 22
+EXPOSE 8000
+# ✅ entrypoint.sh 将会同时启动 SSH 与主程序
 # Install Python 3.10, pip, build essentials, git, and other system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.10 \
