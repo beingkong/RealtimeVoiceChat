@@ -35,36 +35,36 @@ services:
               capabilities: [gpu, compute, utility]
     restart: unless-stopped
 
-  # Ollama Server Service (Using Official Image)
-  # ollama:
-  #   # --- Use the official Ollama image ---
-  #   image: ollama/ollama:latest
-  #   container_name: realtime-voice-chat-ollama
-  #   # --- No 'build:' section needed here ---
-  #   # command: ["ollama", "serve"] # Usually the default command/entrypoint
-  #   volumes:
-  #     # Persist Ollama models and data
-  #     - ollama_data:/root/.ollama
-  #   environment:
-  #     - NVIDIA_VISIBLE_DEVICES=all # Make GPUs visible inside container
-  #     - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-  #     # OLLAMA_MODELS might be useful if needed, points inside volume
-  #     # - OLLAMA_MODELS=/root/.ollama/models
-  #   deploy: # GPU access for Ollama Service
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             count: all
-  #             capabilities: [gpu, compute, utility]
-    # healthcheck:
-      # Check if the Ollama API is responsive
-      # test: ["CMD", "wget", "--quiet", "--spider", "--tries=1", "--timeout=10", "http://localhost:11434/api/tags"]
-      # interval: 15s
-      # timeout: 10s
-      # retries: 12
-      # start_period: 45s # Give it time to start
-    # restart: unless-stopped
+  Ollama Server Service (Using Official Image)
+  ollama:
+    # --- Use the official Ollama image ---
+    image: ollama/ollama:latest
+    container_name: realtime-voice-chat-ollama
+    # --- No 'build:' section needed here ---
+    # command: ["ollama", "serve"] # Usually the default command/entrypoint
+    volumes:
+      # Persist Ollama models and data
+      - ollama_data:/root/.ollama
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all # Make GPUs visible inside container
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # OLLAMA_MODELS might be useful if needed, points inside volume
+      # - OLLAMA_MODELS=/root/.ollama/models
+    deploy: # GPU access for Ollama Service
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, compute, utility]
+    healthcheck:
+      Check if the Ollama API is responsive
+      test: ["CMD", "wget", "--quiet", "--spider", "--tries=1", "--timeout=10", "http://localhost:11434/api/tags"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 45s # Give it time to start
+    restart: unless-stopped
 
 # Define named volumes for persistent data
 volumes:
