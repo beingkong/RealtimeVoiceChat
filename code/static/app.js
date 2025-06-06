@@ -69,6 +69,7 @@ class VoiceChatClient {
         // However, the goal is to not send audio until signaled.
         // So, we buffer it instead of sending immediately if canSendAudio is false.
         if (this.canSendAudio) {
+            console.log(`DEBUG: Sending live audio batch. Size: ${this.batchBuffer.byteLength} bytes.`);
             this.socket.send(this.batchBuffer);
         } else {
             // Instead of sending, add a copy of the buffer to our queue
@@ -84,9 +85,11 @@ class VoiceChatClient {
 
     // This method will be called when the server signals to start sending.
     _sendBufferedAudio() {
+        console.log(`DEBUG: _sendBufferedAudio called. Queue size: ${this.audioBufferQueue.length}`);
         console.log(`Starting to send ${this.audioBufferQueue.length} buffered audio packets.`);
         while(this.audioBufferQueue.length > 0) {
             const buffer = this.audioBufferQueue.shift();
+            console.log(`DEBUG: Sending buffered audio packet. Size: ${buffer.byteLength} bytes. Remaining in queue: ${this.audioBufferQueue.length - 1}`);
             this.socket.send(buffer);
             console.log(`Sent one buffered audio packet. Remaining: ${this.audioBufferQueue.length}`);
         }
@@ -279,6 +282,7 @@ class VoiceChatClient {
             return;
         }
         if (type === "user_speech_started") { // New message type from server
+            console.log("DEBUG: user_speech_started received. Setting canSendAudio to true.");
             console.log("Received user_speech_started from server.");
             this.canSendAudio = true;
             this._sendBufferedAudio(); // Send any buffered audio

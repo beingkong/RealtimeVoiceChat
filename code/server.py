@@ -293,6 +293,10 @@ async def process_incoming_data(ws: WebSocket, app: FastAPI, incoming_chunks: as
                 pcm_data = raw[8:]
                 metadata["pcm"] = pcm_data
                 logger.info(f"🖥️🎤 收到音频数据，大小: {len(pcm_data)} 字节")
+                if pcm_data:
+                    logger.info(f"DEBUG: First 10 bytes of pcm_data: {pcm_data[:10]}")
+                else:
+                    logger.info("DEBUG: pcm_data is empty.")
                 # Log the metadata dictionary itself for inspection (excluding PCM for brevity)
                 metadata_to_log = {k: v for k, v in metadata.items() if k != 'pcm'} # Ensure pcm is excluded
                 logger.debug(f"🖥️📋 Audio metadata from client: {metadata_to_log}")
