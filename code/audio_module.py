@@ -20,9 +20,10 @@ logger = logging.getLogger(__name__)
 START_ENGINE = "kokoro"
 Silence = namedtuple("Silence", ("comma", "sentence", "default"))
 ENGINE_SILENCES = {
-    "coqui":   Silence(comma=0.3, sentence=0.6, default=0.3),
-    "kokoro":  Silence(comma=0.3, sentence=0.6, default=0.3),
-    "orpheus": Silence(comma=0.3, sentence=0.6, default=0.3),
+    "coqui":     Silence(comma=0.3, sentence=0.6, default=0.3),
+    "kokoro":    Silence(comma=0.3, sentence=0.6, default=0.3),
+    "orpheus":   Silence(comma=0.3, sentence=0.6, default=0.3),
+    "chatterbox": Silence(comma=0.3, sentence=0.6, default=0.3),
 }
 # Stream chunk sizes influence latency vs. throughput trade-offs
 QUICK_ANSWER_STREAM_CHUNK_SIZE = 8
@@ -139,6 +140,18 @@ class AudioProcessor:
             )
             voice = OrpheusVoice("tara")
             self.engine.set_voice(voice)
+        elif engine == "chatterbox":
+            # Chatterbox is an alias for Kokoro with optimized settings for direct streaming
+            self.engine = KokoroEngine(
+                voice="af_heart",
+                default_speed=1.26,
+                trim_silence=True,
+                silence_threshold=0.01,
+                extra_start_ms=25,
+                extra_end_ms=15,
+                fade_in_ms=15,
+                fade_out_ms=10,
+            )
         else:
             raise ValueError(f"Unsupported engine: {engine}")
 

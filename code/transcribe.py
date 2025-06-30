@@ -1,7 +1,28 @@
 import logging
+import os
 logger = logging.getLogger(__name__)
 
+# CUDA环境优化配置
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512,expandable_segments:True'
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+# 尝试使用兼容的cuDNN版本
+os.environ['TORCH_CUDNN_V8_API_ENABLED'] = '1'
+
 from turndetect import strip_ending_punctuation
+
+def get_optimal_compute_type():
+    """检测最佳的计算类型 - 强制使用int8以确保兼容性"""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            logger.info("🔧 检测到CUDA GPU，使用int8计算类型以确保兼容性")
+            return "int8"
+        else:
+            logger.info("🔧 使用CPU，选择int8计算类型")
+            return "int8"
+    except Exception as e:
+        logger.warning(f"🔧 计算类型检测失败: {e}，默认使用int8")
+        return "int8"
 from difflib import SequenceMatcher
 from colors import Colors
 from text_similarity import TextSimilarity
@@ -49,6 +70,9 @@ DEFAULT_RECORDER_CONFIG: Dict[str, Any] = {
     "debug_mode": True,
     "initial_prompt_realtime": "The sky is blue. When the sky... She walked home. Because he... Today is sunny. If only I...",
     "faster_whisper_vad_filter": False,
+    # GPU配置，智能选择计算类型
+    "device": "auto",  # 让faster_whisper自动选择最佳设备
+    "compute_type": get_optimal_compute_type(),  # 智能检测最佳计算类型
 }
 
 
