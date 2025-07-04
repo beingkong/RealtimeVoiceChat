@@ -6,7 +6,7 @@ import threading
 import time
 from collections import namedtuple
 from queue import Queue
-from typing import Callable, Generator, Optional
+from typing import Callable, Generator, Optional, List, Dict
 
 import numpy as np
 from huggingface_hub import hf_hub_download
@@ -81,6 +81,8 @@ class AudioProcessor:
             self,
             engine: str = START_ENGINE,
             orpheus_model: str = "orpheus-3b-0.1-ft-Q8_0-GGUF/orpheus-3b-0.1-ft-q8_0.gguf",
+            voice_clone_user_id: Optional[str] = None,
+            enable_voice_cloning: bool = False,
         ) -> None:
         """
         Initializes the AudioProcessor with a specific TTS engine.
@@ -92,12 +94,30 @@ class AudioProcessor:
         Args:
             engine: The name of the TTS engine to use ("coqui", "kokoro", "orpheus").
             orpheus_model: The path or identifier for the Orpheus model file (used only if engine is "orpheus").
+            voice_clone_user_id: User ID for voice cloning (if enabled).
+            enable_voice_cloning: Whether to enable voice cloning functionality.
         """
         self.engine_name = engine
         self.stop_event = threading.Event()
         self.finished_event = threading.Event()
         self.audio_chunks = asyncio.Queue() # Queue for synthesized audio output
         self.orpheus_model = orpheus_model
+
+        # 语音克隆相关配置
+        self.enable_voice_cloning = enable_voice_cloning
+        self.voice_clone_user_id = voice_clone_user_id
+        self.voice_clone_reference = None  # 当前使用的参考音频文件名
+        self.chatterbox_cloner = None
+
+        # 初始化Chatterbox语音克隆器
+        if self.enable_voice_cloning:
+            try:
+                from voice_clone.chatterbox_integration import ChatterboxVoiceCloner
+                self.chatterbox_cloner = ChatterboxVoiceCloner(device="cuda" if torch.cuda.is_available() else "cpu")
+                logger.info(f"🎭 Chatterbox语音克隆功能已启用，用户ID: {voice_clone_user_id}")
+            except ImportError as e:
+                logger.warning(f"⚠️ Chatterbox语音克隆模块导入失败，功能已禁用: {e}")
+                self.enable_voice_cloning = False
 
         self.silence = ENGINE_SILENCES.get(engine, ENGINE_SILENCES[self.engine_name])
         self.current_stream_chunk_size = QUICK_ANSWER_STREAM_CHUNK_SIZE # Initial chunk size
@@ -266,6 +286,11 @@ class AudioProcessor:
         Returns:
             True if synthesis completed fully, False if interrupted by stop_event.
         """
+        # 检查是否使用语音克隆
+        if self.is_voice_clone_active():
+            logger.info(f"🎭 {generation_string} 使用语音克隆模式: {self.voice_clone_user_id}/{self.voice_clone_reference}")
+            return self._synthesize_with_voice_clone(text, audio_chunks, stop_event, generation_string)
+
         if self.engine_name == "coqui" and hasattr(self.engine, 'set_stream_chunk_size') and self.current_stream_chunk_size != QUICK_ANSWER_STREAM_CHUNK_SIZE:
             logger.info(f"👄⚙️ {generation_string} Setting Coqui stream chunk size to {QUICK_ANSWER_STREAM_CHUNK_SIZE} for quick synthesis.")
             self.engine.set_stream_chunk_size(QUICK_ANSWER_STREAM_CHUNK_SIZE)
@@ -448,6 +473,11 @@ class AudioProcessor:
         Returns:
             True if synthesis completed fully, False if interrupted by stop_event.
         """
+        # 检查是否使用语音克隆
+        if self.is_voice_clone_active():
+            logger.info(f"🎭 {generation_string} 使用语音克隆模式进行流式合成: {self.voice_clone_user_id}/{self.voice_clone_reference}")
+            return self._synthesize_generator_with_voice_clone(generator, audio_chunks, stop_event, generation_string)
+
         if self.engine_name == "coqui" and hasattr(self.engine, 'set_stream_chunk_size') and self.current_stream_chunk_size != FINAL_ANSWER_STREAM_CHUNK_SIZE:
             logger.info(f"👄⚙️ {generation_string} Setting Coqui stream chunk size to {FINAL_ANSWER_STREAM_CHUNK_SIZE} for generator synthesis.")
             self.engine.set_stream_chunk_size(FINAL_ANSWER_STREAM_CHUNK_SIZE)
@@ -596,3 +626,224 @@ class AudioProcessor:
 
         logger.info(f"👄✅ {generation_string} Final answer synthesis complete.")
         return True # Indicate successful completion
+
+    # ========== 语音克隆相关方法 ==========
+
+    def set_voice_clone_user(self, user_id: str, reference_filename: Optional[str] = None) -> bool:
+        """
+        设置语音克隆用户ID和参考音频
+
+        Args:
+            user_id: 用户ID
+            reference_filename: 参考音频文件名
+
+        Returns:
+            bool: 是否设置成功
+        """
+        if not self.enable_voice_cloning:
+            logger.warning("⚠️ 语音克隆功能未启用")
+            return False
+
+        if not self.chatterbox_cloner:
+            logger.error("❌ Chatterbox语音克隆器未初始化")
+            return False
+
+        # 检查用户参考音频是否存在
+        if reference_filename:
+            if not self.chatterbox_cloner.audio_manager.get_voice_path(user_id, reference_filename):
+                logger.error(f"❌ 参考音频不存在: {user_id}/{reference_filename}")
+                return False
+            self.voice_clone_reference = reference_filename
+
+        self.voice_clone_user_id = user_id
+        logger.info(f"🎭 语音克隆用户已设置: {user_id}, 参考音频: {reference_filename}")
+        return True
+
+    def enable_voice_clone_mode(self, user_id: Optional[str] = None, reference_filename: Optional[str] = None) -> bool:
+        """
+        启用语音克隆模式
+
+        Args:
+            user_id: 可选的用户ID，如果不提供则使用当前设置的用户ID
+            reference_filename: 可选的参考音频文件名
+
+        Returns:
+            bool: 是否启用成功
+        """
+        if not self.enable_voice_cloning:
+            logger.warning("⚠️ 语音克隆功能未启用")
+            return False
+
+        target_user_id = user_id or self.voice_clone_user_id
+        if not target_user_id:
+            logger.error("❌ 未指定语音克隆用户ID")
+            return False
+
+        target_reference = reference_filename or self.voice_clone_reference
+        return self.set_voice_clone_user(target_user_id, target_reference)
+
+    def disable_voice_clone_mode(self):
+        """禁用语音克隆模式，恢复默认语音"""
+        self.voice_clone_user_id = None
+        self.voice_clone_reference = None
+        logger.info("🎭 语音克隆模式已禁用，恢复默认语音")
+
+    def get_available_clone_voices(self, user_id: Optional[str] = None) -> Dict:
+        """
+        获取可用的语音克隆参考音频列表
+
+        Args:
+            user_id: 用户ID，如果为None则获取所有用户
+
+        Returns:
+            Dict: 可用参考音频列表
+        """
+        if not self.enable_voice_cloning or not self.chatterbox_cloner:
+            return {"voices": [], "count": 0}
+
+        return self.chatterbox_cloner.list_available_voices(user_id)
+
+    def is_voice_clone_active(self) -> bool:
+        """
+        检查语音克隆是否激活
+
+        Returns:
+            bool: 是否激活
+        """
+        return (self.enable_voice_cloning and
+                self.voice_clone_user_id is not None and
+                self.voice_clone_reference is not None and
+                self.chatterbox_cloner is not None)
+
+    def get_current_voice_info(self) -> Dict:
+        """
+        获取当前语音信息
+
+        Returns:
+            Dict: 语音信息
+        """
+        if self.is_voice_clone_active():
+            return {
+                "type": "voice_clone",
+                "user_id": self.voice_clone_user_id,
+                "reference_filename": self.voice_clone_reference,
+                "engine": self.engine_name
+            }
+        else:
+            # 获取默认语音信息
+            voice_info = {"type": "default", "engine": self.engine_name}
+
+            if self.engine_name == "kokoro" or self.engine_name == "chatterbox":
+                voice_info["voice"] = getattr(self.engine, 'voice', 'af_heart')
+            elif self.engine_name == "orpheus":
+                voice_info["voice"] = "tara"
+            elif self.engine_name == "coqui":
+                voice_info["voice"] = "Lasinya"
+
+            return voice_info
+
+    def _synthesize_with_voice_clone(
+        self,
+        text: str,
+        audio_chunks: Queue,
+        stop_event: threading.Event,
+        generation_string: str = ""
+    ) -> bool:
+        """
+        使用语音克隆进行合成
+
+        Args:
+            text: 要合成的文本
+            audio_chunks: 音频块队列
+            stop_event: 停止事件
+            generation_string: 生成标识字符串
+
+        Returns:
+            bool: 是否成功完成
+        """
+        try:
+            logger.info(f"🎭 {generation_string} 开始语音克隆合成")
+
+            # 使用流式语音克隆
+            chunk_count = 0
+            for audio_chunk, metrics in self.chatterbox_cloner.generate_stream_with_reference(
+                text=text,
+                user_id=self.voice_clone_user_id,
+                reference_filename=self.voice_clone_reference
+            ):
+                # 检查停止信号
+                if stop_event.is_set():
+                    logger.info(f"🎭🛑 {generation_string} 语音克隆合成被中断")
+                    return False
+
+                # 转换音频格式为bytes
+                if isinstance(audio_chunk, np.ndarray):
+                    # 确保音频数据在正确范围内
+                    if audio_chunk.dtype != np.int16:
+                        # 归一化到int16范围
+                        if audio_chunk.max() <= 1.0:
+                            audio_chunk = (audio_chunk * 32767).astype(np.int16)
+                        else:
+                            audio_chunk = audio_chunk.astype(np.int16)
+
+                    audio_bytes = audio_chunk.tobytes()
+                else:
+                    audio_bytes = bytes(audio_chunk)
+
+                # 放入队列
+                if len(audio_bytes) > 0:
+                    audio_chunks.put(audio_bytes)
+                    chunk_count += 1
+
+                    # 触发第一个音频块回调
+                    if chunk_count == 1 and hasattr(self, 'on_first_audio_chunk_synthesize'):
+                        self.on_first_audio_chunk_synthesize()
+
+            logger.info(f"🎭✅ {generation_string} 语音克隆合成完成，共生成 {chunk_count} 个音频块")
+            return True
+
+        except Exception as e:
+            logger.error(f"🎭❌ {generation_string} 语音克隆合成失败: {e}")
+            return False
+
+    def _synthesize_generator_with_voice_clone(
+        self,
+        generator: Generator[str, None, None],
+        audio_chunks: Queue,
+        stop_event: threading.Event,
+        generation_string: str = ""
+    ) -> bool:
+        """
+        使用语音克隆进行流式生成器合成
+
+        Args:
+            generator: 文本生成器
+            audio_chunks: 音频块队列
+            stop_event: 停止事件
+            generation_string: 生成标识字符串
+
+        Returns:
+            bool: 是否成功完成
+        """
+        try:
+            logger.info(f"🎭 {generation_string} 开始语音克隆流式生成器合成")
+
+            # 收集所有文本
+            full_text = ""
+            for text_chunk in generator:
+                if stop_event.is_set():
+                    logger.info(f"🎭🛑 {generation_string} 文本生成被中断")
+                    return False
+                full_text += text_chunk
+
+            # 如果没有文本，返回成功
+            if not full_text.strip():
+                logger.info(f"🎭 {generation_string} 没有文本需要合成")
+                return True
+
+            # 使用完整文本进行语音克隆合成
+            return self._synthesize_with_voice_clone(full_text, audio_chunks, stop_event, generation_string)
+
+        except Exception as e:
+            logger.error(f"🎭❌ {generation_string} 语音克隆流式生成器合成失败: {e}")
+            return False

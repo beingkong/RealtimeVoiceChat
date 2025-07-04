@@ -153,7 +153,17 @@ app.add_middleware(
 )
 
 # Mount static files with no cache
-app.mount("/static", NoCacheStaticFiles(directory="static"), name="static")
+app.mount("/static", NoCacheStaticFiles(directory="../static"), name="static")
+
+# 集成语音克隆API
+try:
+    from voice_clone_api import router as voice_clone_router
+    app.include_router(voice_clone_router)
+    logger.info("🎭 语音克隆API已集成")
+except ImportError as e:
+    logger.warning(f"⚠️ 语音克隆API集成失败: {e}")
+except Exception as e:
+    logger.error(f"❌ 语音克隆API集成错误: {e}")
 
 @app.get("/favicon.ico")
 async def favicon():
@@ -178,6 +188,22 @@ async def get_index() -> HTMLResponse:
     with open("static/index.html", "r", encoding="utf-8") as f:
         html_content = f.read()
     return HTMLResponse(content=html_content)
+
+@app.get("/voice-clone")
+async def get_voice_clone() -> HTMLResponse:
+    """
+    Serves the voice clone management page.
+
+    Returns:
+        An HTMLResponse containing the content of voice_clone.html.
+    """
+    try:
+        with open("../static/voice_clone.html", "r", encoding="utf-8") as f:
+            html_content = f.read()
+        return HTMLResponse(content=html_content)
+    except FileNotFoundError:
+        logger.error("❌ voice_clone.html not found")
+        return HTMLResponse(content="<h1>语音克隆页面未找到</h1>", status_code=404)
 
 # --------------------------------------------------------------------
 # Utility functions
@@ -945,7 +971,7 @@ if __name__ == "__main__":
     # Run the server without SSL
     if not USE_SSL:
         logger.info("🖥️▶️ Starting server without SSL.")
-        uvicorn.run("server:app", host="0.0.0.0", port=8000, log_config=None)
+        uvicorn.run("server:app", host="0.0.0.0", port=8002, log_config=None)
 
     else:
         logger.info("🖥️🔒 Attempting to start server with SSL.")
@@ -966,7 +992,7 @@ if __name__ == "__main__":
         uvicorn.run(
             "server:app",
             host="0.0.0.0",
-            port=8000,
+            port=8002,
             log_config=None,
             ssl_certfile=cert_file,
             ssl_keyfile=key_file,

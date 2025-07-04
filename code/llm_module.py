@@ -643,11 +643,15 @@ class LLM:
 
         if len(messages) == 0 or messages[-1]["role"] != "user":
             added_text = text # for normal text
-            if self.no_think:
-                 # This modification logic remains specific for now
-                added_text = f"{text}/nothink" # for qwen 3
             logger.info(f"🧠💬 llm_module.py generate adding role user to messages, content: {added_text}")
             messages.append({"role": "user", "content": added_text})
+
+        # 在no_think模式下，无论是否添加了新的用户消息，都要添加空思考标签的assistant消息
+        if self.no_think:
+            # 使用无状态方法：添加空思考标签的assistant消息
+            # 这种方法仅对当前轮对话有效，严格阻止模型生成思考内容
+            messages.append({"role": "assistant", "content": "<think>\n\n</think>\n\n"})
+            logger.info(f"🧠💬 llm_module.py generate added empty think tags for assistant to disable thinking")
         logger.debug(f"🤖💬 [{req_id}] Prepared messages count: {len(messages)}")
 
         stream_iterator = None
